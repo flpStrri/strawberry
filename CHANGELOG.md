@@ -1,6 +1,789 @@
 CHANGELOG
 =========
 
+0.49.1 - 2021-03-14
+-------------------
+
+Fix bug when using arguments inside a type that uses typing.Generics
+
+0.49.0 - 2021-03-12
+-------------------
+
+This releases updates the ASGI class to make it easier to override `get_http_response`.
+
+`get_http_response` has been now removed from strawberry.asgi.http and been moved to be
+a method on the ASGI class.
+
+A new `get_graphiql_response` method has been added to make it easier to provide a different GraphiQL interface.
+
+0.48.3 - 2021-03-11
+-------------------
+
+This release updates `get_context` in the asgi integration to also
+receive a temporal response object that can be used to set headers
+and cookies.
+
+0.48.2 - 2021-03-09
+-------------------
+
+This release fixes a bug when using the debug server and upload a file
+
+0.48.1 - 2021-03-03
+-------------------
+
+Fix DataLoader docs typo.
+
+0.48.0 - 2021-03-02
+-------------------
+
+# New Features
+Added support for sanic webserver.
+
+# Changelog
+`ExecutionResult` was erroneously defined twice in the repository. The entry in `strawberry.schema.base` has been removed. If you were using it, switch to using
+`strawberry.types.ExecutionResult` instead:
+
+```python
+from strawberry.types import ExecutionResult
+```
+
+0.47.1 - 2021-03-02
+-------------------
+
+Enable using .get for django context as well as for the square brackets notation.
+
+0.47.0 - 2021-02-28
+-------------------
+
+Enable dot notation for django context request
+
+0.46.0 - 2021-02-26
+-------------------
+
+Supporting multipart file uploads on Flask
+
+0.45.4 - 2021-02-16
+-------------------
+
+Expose execution info under `strawberry.types.Info`
+
+0.45.3 - 2021-02-08
+-------------------
+
+Fixes mypy failing when casting in enum decorator
+
+0.45.2 - 2021-02-08
+-------------------
+
+Suggest installing the debug server on the getting started docs, so examples can work without import errors of uvicorn
+
+0.45.1 - 2021-01-31
+-------------------
+
+Fix Generic name generation to use the custom name specified in Strawberry if available
+
+```python
+@strawberry.type(name="AnotherName")
+class EdgeName:
+    node: str
+
+@strawberry.type
+class Connection(Generic[T]):
+    edge: T
+```
+
+will result in `AnotherNameConnection`, and not `EdgeNameConnection` as before.
+
+0.45.0 - 2021-01-27
+-------------------
+
+This release add the ability to disable query validation by setting
+`validate_queries` to `False`
+
+```python
+import strawberry
+
+@strawberry.type
+class Query:
+    @strawberry.field
+    def hello(self) -> str:
+        return "Hello"
+
+
+schema = strawberry.Schema(Query, validate_queries=validate_queries)
+```
+
+0.44.12 - 2021-01-23
+--------------------
+
+This release adds support for MyPy==0.800
+
+0.44.11 - 2021-01-22
+--------------------
+
+Fix for a duplicated input types error.
+
+0.44.10 - 2021-01-22
+--------------------
+
+Internal codebase refactor. Clean up, consolidate, and standardize the conversion layer
+between Strawberry types and GraphQL Core types; with room for further future
+abstraction to support other GraphQL backends.
+
+0.44.9 - 2021-01-22
+-------------------
+
+Improves typing when decorating an enum with kwargs like description and name. Adds more mypy tests.
+
+0.44.8 - 2021-01-20
+-------------------
+
+This releases fixes a wrong dependency issue
+
+0.44.7 - 2021-01-13
+-------------------
+
+Supporting multipart uploads as described here: https://github.com/jaydenseric/graphql-multipart-request-spec for ASGI.
+
+0.44.6 - 2021-01-02
+-------------------
+
+Fix Strawberry to handle multiple subscriptions at the same time
+
+0.44.5 - 2020-12-28
+-------------------
+
+Pass `execution_context_class` to Schema creation
+
+0.44.4 - 2020-12-27
+-------------------
+
+Add support for converting more pydantic types
+
+- pydantic.EmailStr
+- pydantic.AnyUrl
+- pydantic.AnyHttpUrl
+- pydantic.HttpUrl
+- pydantic.PostgresDsn
+- pydantic.RedisDsn
+
+0.44.3 - 2020-12-16
+-------------------
+
+This releases fixes an issue where methods marked as field were
+removed from the class.
+
+0.44.2 - 2020-11-22
+-------------------
+
+Validate the schema when it is created instead of at runtime.
+
+0.44.1 - 2020-11-20
+-------------------
+
+This release adds support for strawberry.federation.field under mypy.
+
+0.44.0 - 2020-11-19
+-------------------
+
+Creation of a `[debug-server]` extra, which is required to get going quickly with this project!
+
+```
+pip install strawberry-graphql
+```
+
+Will now install the primary portion of of the framework, allowing you to build your GraphQL
+schema using the dataclasses pattern.
+
+To get going quickly, you can install `[debug-server]` which brings along a server which allows
+you to develop your API dynamically, assuming your schema is defined in the `app` module:
+
+```
+pip install strawberry-graphql[debug-server]
+strawberry server app
+```
+
+Typically, in a production environment, you'd want to bring your own server :)
+
+0.43.2 - 2020-11-19
+-------------------
+
+This release fixes an issue when usign unions inside generic types, this is now
+supported:
+
+
+```python
+@strawberry.type
+class Dog:
+    name: str
+
+@strawberry.type
+class Cat:
+    name: str
+
+@strawberry.type
+class Connection(Generic[T]):
+    nodes: List[T]
+
+@strawberry.type
+class Query:
+    connection: Connection[Union[Dog, Cat]]
+```
+
+0.43.1 - 2020-11-18
+-------------------
+
+This releases fixes an issue with Strawberry requiring Pydantic even when not used.
+
+0.43.0 - 2020-11-18
+-------------------
+
+This release adds support for creating types from Pydantic models. Here's an
+example:
+
+```python
+import strawberry
+
+from datetime import datetime
+from typing import List, Optional
+from pydantic import BaseModel
+
+
+class UserModel(BaseModel):
+    id: int
+    name = 'John Doe'
+    signup_ts: Optional[datetime] = None
+    friends: List[int] = []
+
+@strawberry.experimental.pydantic.type(model=UserModel, fields=[
+    'id',
+    'name',
+    'friends'
+])
+class UserType:
+    pass
+```
+
+0.42.7 - 2020-11-18
+-------------------
+
+Add some checks to make sure the types passed to `.union` are valid.
+
+0.42.6 - 2020-11-18
+-------------------
+
+Fix issue preventing reusing the same resolver for multiple fields, like here:
+
+```python
+def get_name(self) -> str:
+    return "Name"
+
+@strawberry.type
+class Query:
+    name: str = strawberry.field(resolver=get_name)
+    name_2: str = strawberry.field(resolver=get_name)
+```
+
+0.42.5 - 2020-11-18
+-------------------
+
+Another small improvement for mypy, this should prevent mypy from crashing when it can't find a type
+
+0.42.4 - 2020-11-18
+-------------------
+
+This release fixes another issue with mypy where it wasn't able to identify strawberry fields.
+It also now knows that fields with resolvers aren't put in the __init__ method of the class.
+
+0.42.3 - 2020-11-17
+-------------------
+
+This release type improves support for strawberry.field in mypy,
+now we don't get `Attributes without a default cannot follow attributes with one`
+when using strawberry.field before a type without a default.
+
+0.42.2 - 2020-11-17
+-------------------
+
+Bugfix to allow the use of `UNSET` as a default value for arguments.
+
+```python
+import strawberry
+from strawberry.arguments import UNSET, is_unset
+
+@strawberry.type
+class Query:
+    @strawberry.field
+    def hello(self, name: Optional[str] = UNSET) -> str:
+        if is_unset(name):
+            return "Hi there"
+        return "Hi {name}"
+
+schema = strawberry.Schema(query=Query)
+
+result = schema.execute_async("{ hello }")
+assert result.data == {"hello": "Hi there"}
+
+result = schema.execute_async('{ hello(name: "Patrick" }')
+assert result.data == {"hello": "Hi Patrick"}
+```
+
+SDL:
+
+```graphql
+type Query {
+  hello(name: String): String!
+}
+```
+
+0.42.1 - 2020-11-17
+-------------------
+
+This release improves mypy support for strawberry.field
+
+0.42.0 - 2020-11-17
+-------------------
+
+* Completely revamped how resolvers are created, stored, and managed by
+  StrawberryField. Now instead of monkeypatching a `FieldDefinition` object onto
+  the resolver function itself, all resolvers are wrapped inside of a
+  `StrawberryResolver` object with the useful properties.
+* `arguments.get_arguments_from_resolver` is now the
+  `StrawberryResolver.arguments` property
+* Added a test to cover a situation where a field is added to a StrawberryType
+  manually using `dataclasses.field` but not annotated. This was previously
+  uncaught.
+
+0.41.1 - 2020-11-14
+-------------------
+
+This release fixes an issue with forward types
+
+0.41.0 - 2020-11-06
+-------------------
+
+This release adds a built-in dataloader. Example:
+
+```python
+async def app():
+    async def idx(keys):
+        return keys
+
+    loader = DataLoader(load_fn=idx)
+
+    [value_a, value_b, value_c] = await asyncio.gather(
+        loader.load(1),
+        loader.load(2),
+        loader.load(3),
+    )
+
+
+    assert value_a == 1
+    assert value_b == 2
+    assert value_c == 3
+```
+
+0.40.2 - 2020-11-05
+-------------------
+
+Allow interfaces to implement other interfaces.
+This may be useful if you are using the relay pattern
+or if you want to model base interfaces that can be extended.
+
+Example:
+```python
+import strawberry
+
+
+@strawberry.interface
+class Error:
+    message: str
+
+@strawberry.interface
+class FieldError(Error):
+    message: str
+    field: str
+
+@strawberry.type
+class PasswordTooShort(FieldError):
+    message: str
+    field: str
+    fix: str
+```
+Produces the following SDL:
+```graphql
+interface Error {
+  message: String!
+}
+
+interface FieldError implements Error {
+  message: String!
+  field: String!
+}
+
+type PasswordTooShort implements FieldError & Error {
+  message: String!
+  field: String!
+  fix: String!
+}
+```
+
+0.40.1 - 2020-11-05
+-------------------
+
+Fix mypy plugin to handle bug where the `types` argument to `strawberry.union` is passed in as a keyword argument instead of a position one.
+
+```python
+MyUnion = strawberry.union(types=(TypeA, TypeB), name="MyUnion")
+```
+
+0.40.0 - 2020-11-03
+-------------------
+
+This release adds a new AsyncGraphQLView for django.
+
+0.39.4 - 2020-11-02
+-------------------
+
+Improve typing for `field` and `StrawberryField`.
+
+0.39.3 - 2020-10-30
+-------------------
+
+This release disable implicit re-export of modules. This fixes Strawberry for you if you were using `implicit_reexport = False` in your MyPy config.
+
+0.39.2 - 2020-10-29
+-------------------
+
+This fixes the prettier pre-lint check.
+
+0.39.1 - 2020-10-28
+-------------------
+
+Fix issue when using `strawberry.enum(module.EnumClass)` in mypy
+
+0.39.0 - 2020-10-27
+-------------------
+
+This release adds support to mark a field as deprecated via `deprecation_reason`
+
+0.38.1 - 2020-10-27
+-------------------
+
+Set default value to null in the schema when it's set to None
+
+0.38.0 - 2020-10-27
+-------------------
+
+Register UUID's as a custom scalar type instead of the ID type.
+
+⚠️ This is a potential breaking change because inputs of type UUID are now parsed as instances of uuid.UUID instead of strings as they were before.
+
+0.37.7 - 2020-10-27
+-------------------
+
+This release fixes a bug when returning list in async resolvers
+
+0.37.6 - 2020-10-23
+-------------------
+
+This release improves how we check for enums
+
+0.37.5 - 2020-10-23
+-------------------
+
+This release improves how we handle enum values when returing lists of enums.
+
+0.37.4 - 2020-10-22
+-------------------
+
+This releases adds a workaround to prevent mypy from crashing in specific occasions
+
+0.37.3 - 2020-10-22
+-------------------
+
+This release fixes an issue preventing to return enums in lists
+
+0.37.2 - 2020-10-21
+-------------------
+
+This release improves support for strawberry.enums when type checking with mypy.
+
+0.37.1 - 2020-10-20
+-------------------
+
+Fix ASGI view to call `get_context` during a websocket request
+
+0.37.0 - 2020-10-18
+-------------------
+
+Add support for adding a description to field arguments using the [`Annotated`](https://docs.python.org/3/library/typing.html#typing.Annotated) type:
+
+```python
+from typing import Annotated
+
+@strawberry.type
+class Query:
+    @strawberry.field
+    def user_by_id(id: Annotated[str, strawberry.argument(description="The ID of the user")]) -> User:
+        ...
+```
+
+which results in the following schema:
+
+```graphql
+type Query {
+  userById(
+    """The ID of the user"""
+    id: String
+  ): User!
+}
+```
+
+**Note:** if you are not using Python v3.9 or greater you will need to import `Annotated` from `typing_extensions`
+
+0.36.4 - 2020-10-17
+-------------------
+
+This release adds support for using strawberry.enum as a function with MyPy,
+this is now valid typed code:
+
+```python
+from enum import Enum
+
+import strawberry
+
+class IceCreamFlavour(Enum):
+    VANILLA = "vanilla"
+    STRAWBERRY = "strawberry"
+    CHOCOLATE = "chocolate"
+
+Flavour = strawberry.enum(IceCreamFlavour)
+```
+
+0.36.3 - 2020-10-16
+-------------------
+
+Add `__str__` to `Schema` to allow printing schema sdl with `str(schema)`
+
+0.36.2 - 2020-10-12
+-------------------
+
+Extend support for parsing isoformat datetimes,
+adding a dependency on the `dateutil` library.
+For example: "2020-10-12T22:00:00.000Z"
+can now be parsed as a datetime with a UTC timezone.
+
+0.36.1 - 2020-10-11
+-------------------
+
+Add `schema.introspect()` method to return introspection result of the schema.
+This might be useful for tools like `apollo codegen` or `graphql-voyager` which
+expect a full json representation of the schema
+
+0.36.0 - 2020-10-06
+-------------------
+
+This releases adds a new extension for OpenTelemetry.
+
+```python
+import asyncio
+
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import (
+    ConsoleSpanExporter,
+    SimpleExportSpanProcessor,
+)
+
+import strawberry
+from strawberry.extensions.tracing import OpenTelemetryExtension
+
+
+trace.set_tracer_provider(TracerProvider())
+trace.get_tracer_provider().add_span_processor(
+    SimpleExportSpanProcessor(ConsoleSpanExporter())
+)
+
+
+@strawberry.type
+class User:
+    name: str
+
+
+@strawberry.type
+class Query:
+    @strawberry.field
+    async def user(self, name: str) -> User:
+        await asyncio.sleep(0.1)
+        return User(name)
+
+
+schema = strawberry.Schema(Query, extensions=[OpenTelemetryExtension])
+```
+
+0.35.5 - 2020-10-05
+-------------------
+
+This release disables tracing for default resolvers and introspection queries
+
+0.35.4 - 2020-10-05
+-------------------
+
+This releases allows UNSET to be used anywhere and prevents mypy to report an error.
+
+0.35.3 - 2020-10-05
+-------------------
+
+This releases adds support for strawberry.union inside mypy.
+
+0.35.2 - 2020-10-04
+-------------------
+
+This release fixes an issue with the extension runner and async resolvers
+
+0.35.1 - 2020-10-02
+-------------------
+
+Fixed bug where you couldn't use the same Union type multiple times in a schema.
+
+0.35.0 - 2020-10-02
+-------------------
+
+Added `strawberry.Private` type to mark fields as "private" so they don't show up in the GraphQL schema.
+
+Example:
+
+```python
+import strawberry
+
+@strawberry.type
+class User:
+    age: strawberry.Private[int]
+
+    @strawberry.field
+    def age_in_months(self) -> int:
+        return self.age * 12
+```
+
+0.34.2 - 2020-10-01
+-------------------
+
+Fix typo in type_resolver.py
+
+0.34.1 - 2020-09-30
+-------------------
+
+This release fixes an issue with mypy when doing the following:
+
+```python
+import strawberry
+
+@strawberry.type
+class User:
+    name: str = strawberry.field(description='Example')
+```
+
+0.34.0 - 2020-09-30
+-------------------
+
+This release adds support for Apollo Tracing and support for creating Strawberry
+extensions, here's how you can enable Apollo tracing:
+
+```python
+from strawberry.extensions.tracing import ApolloTracingExtension
+
+schema = strawberry.Schema(query=Query, extensions=[ApolloTracingExtension])
+```
+
+And here's an example of custom extension:
+
+```python
+from strawberry.extensions import Extension
+
+class MyExtension(Extension):
+    def get_results(self):
+        return {
+            "example": "this is an example for an extension"
+        }
+
+schema = strawberry.Schema(query=Query, extensions=[MyExtension])
+```
+
+0.33.1 - 2020-09-25
+-------------------
+
+This release fixes an issue when trying to print a type
+with a UNSET default value
+
+0.33.0 - 2020-09-24
+-------------------
+
+* `UnionDefinition` has been renamed to `StrawberryUnion`
+* `strawberry.union` now returns an instance of `StrawberryUnion` instead of a
+dynamically generated class instance with a `_union_definition` attribute of
+type `UnionDefinition`.
+
+0.32.4 - 2020-09-22
+-------------------
+
+This release adds the `py.typed` file for better mypy support.
+
+0.32.3 - 2020-09-07
+-------------------
+
+This release fixes another issue with extending types.
+
+0.32.2 - 2020-09-07
+-------------------
+
+This releases fixes an issue when extending types, now
+fields should work as they were working before even
+when extending an exising type.
+
+0.32.1 - 2020-09-06
+-------------------
+
+Improves tooling by adding `flake8-eradicate` to `flake8` `pre-commit` hook..
+
+0.32.0 - 2020-09-06
+-------------------
+
+Previously, `strawberry.field` had redundant arguments for the resolver, one for
+when `strawberry.field` was used as a decorator, and one for when it was used as
+a function. These are now combined into a single argument.
+
+The `f` argument of `strawberry.field` no longer exists. This is a
+backwards-incompatible change, but should not affect many users. The `f`
+argument was the first argument for `strawberry.field` and its use was only
+documented without the keyword. The fix is very straight-forward: replace any
+`f=` kwarg with `resolver=`.
+
+```python
+@strawberry.type
+class Query:
+
+    my_int: int = strawberry.field(f=lambda: 5)
+    # becomes
+    my_int: int = strawberry.field(resolver=lambda: 5)
+
+    # no change
+    @strawberry.field
+    def my_float(self) -> float:
+        return 5.5
+
+```
+
+Other (minor) breaking changes
+* `MissingArgumentsAnnotationsError`'s message now uses the original Python
+field name instead of the GraphQL field name. The error can only be thrown while
+instantiating a strawberry.field, so the Python field name should be more
+helpful.
+* As a result, `strawberry.arguments.get_arguments_from_resolver()` now only
+takes one field -- the `resolver` Callable.
+* `MissingFieldAnnotationError` is now thrown when a strawberry.field is not
+type-annotated but also has no resolver to determine its type
+
 0.31.1 - 2020-08-26
 -------------------
 
@@ -23,7 +806,7 @@ Django example:
 from django.http import HttpRequest
 from strawberry.django.views import GraphQLView as BaseGraphQLView
 from strawberry.http import GraphQLHTTPResponse
-from strawberry.schema import ExecutionResult
+from strawberry.types import ExecutionResult
 
 class GraphQLView(BaseGraphQLView):
     def process_result(self, request: HttpRequest, result: ExecutionResult) -> GraphQLHTTPResponse:
@@ -37,7 +820,7 @@ Flask example:
 # views.py
 from strawberry.flask.views import GraphQLView as BaseGraphQLView
 from strawberry.http import GraphQLHTTPResponse
-from strawberry.schema import ExecutionResult
+from strawberry.types import ExecutionResult
 
 class GraphQLView(BaseGraphQLView):
     def process_result(self, result: ExecutionResult) -> GraphQLHTTPResponse:
@@ -50,7 +833,7 @@ ASGI example:
 ```python
 from strawberry.asgi import GraphQL as BaseGraphQL
 from strawberry.http import GraphQLHTTPResponse
-from strawberry.schema import ExecutionResult
+from strawberry.types import ExecutionResult
 from starlette.requests import Request
 
 from .schema import schema
@@ -189,7 +972,7 @@ We follow the following spec: https://github.com/jaydenseric/graphql-multipart-r
 Example:
 
 ```python
-import strawberry 
+import strawberry
 from strawberry.file_uploads import Upload
 
 
@@ -316,7 +1099,7 @@ class Query:
 0.26.3 - 2020-06-10
 -------------------
 
-This release disables subscription in GraphiQL where it 
+This release disables subscription in GraphiQL where it
 is not supported.
 
 0.26.2 - 2020-06-03

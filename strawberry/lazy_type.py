@@ -21,7 +21,7 @@ class LazyType(Generic[TypeName, Module]):
 
         if module.startswith("."):
             current_frame = inspect.currentframe()
-            package = current_frame.f_back.f_globals["__package__"]
+            package = current_frame.f_back.f_globals["__package__"]  # type: ignore
 
         return cls(type_name, module, package)
 
@@ -33,5 +33,5 @@ class LazyType(Generic[TypeName, Module]):
     # this empty call method allows LazyTypes to be used in generic types
     # for example: List[LazyType["A", "module"]]
 
-    def __call__(self):
+    def __call__(self):  # pragma: no cover
         return None

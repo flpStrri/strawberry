@@ -1,37 +1,57 @@
 import builtins
-import dataclasses
-from typing import Dict, Iterable, Tuple, Type, cast
+from typing import Dict, Iterable, Tuple, Type, Union, cast
 
-from strawberry.union import union
+from strawberry.union import StrawberryUnion, union
 from strawberry.utils.str_converters import capitalize_first
-from strawberry.utils.typing import is_type_var
+from strawberry.utils.typing import is_type_var, is_union
 
-from .types import FederationFieldParams, FieldDefinition, TypeDefinition
+from .types import FieldDefinition, TypeDefinition
 
 
-def get_name_from_types(types: Iterable[Type]):
-    return "".join([capitalize_first(type.__name__) for type in types])
+def get_name_from_types(types: Iterable[Union[Type, StrawberryUnion]]):
+    names = []
+
+    for type_ in types:
+        if isinstance(type_, StrawberryUnion):
+            return type_.name
+        elif hasattr(type_, "_type_definition"):
+            name = capitalize_first(type_._type_definition.name)
+        else:
+            name = capitalize_first(type_.__name__)
+
+        names.append(name)
+
+    return "".join(names)
+
+
+def copy_union_with(
+    types: Tuple[Type, ...],
+    params_to_type: Dict[Type, Union[Type, StrawberryUnion]] = None,
+    description=None,
+) -> StrawberryUnion:
+    types = cast(
+        Tuple[Type, ...],
+        tuple(copy_type_with(t, params_to_type=params_to_type) for t in types),
+    )
+
+    return union(
+        name=get_name_from_types(types),
+        types=types,
+        description=description,
+    )
 
 
 def copy_type_with(
-    base: Type, *types: Type, params_to_type: Dict[Type, Type] = None
+    base: Type,
+    *types: Type,
+    params_to_type: Dict[Type, Union[Type, StrawberryUnion]] = None
 ) -> Type:
     if params_to_type is None:
         params_to_type = {}
 
-    if hasattr(base, "_union_definition"):
-        types = cast(
-            Tuple[Type],
-            tuple(
-                copy_type_with(t, params_to_type=params_to_type)
-                for t in base._union_definition.types
-            ),
-        )
-
-        return union(
-            name=get_name_from_types(types),
-            types=types,
-            description=base._union_definition.description,
+    if isinstance(base, StrawberryUnion):
+        return copy_union_with(
+            base.types, params_to_type=params_to_type, description=base.description
         )
 
     if hasattr(base, "_type_definition"):
@@ -41,12 +61,19 @@ def copy_type_with(
             fields = []
 
             type_params = definition.type_params.values()
-            params_to_type.update(dict(zip(type_params, types)))
+
+            for param, type_ in zip(type_params, types):
+                if is_union(type_):
+                    params_to_type[param] = copy_union_with(
+                        type_.__args__, params_to_type=params_to_type
+                    )
+                else:
+                    params_to_type[param] = type_
 
             name = get_name_from_types(params_to_type.values()) + definition.name
 
             for field in definition.fields:
-                kwargs = dataclasses.asdict(field)
+                kwargs = field.__dict__.copy()
 
                 if field.is_list:
                     child = cast(FieldDefinition, field.child)
@@ -69,9 +96,6 @@ def copy_type_with(
                         field_type, params_to_type=params_to_type
                     )
 
-                federation_args = kwargs.pop("federation")
-                kwargs["federation"] = FederationFieldParams(**federation_args)
-
                 fields.append(FieldDefinition(**kwargs))
 
             type_definition = TypeDefinition(
@@ -83,12 +107,14 @@ def copy_type_with(
                 federation=definition.federation,
                 interfaces=definition.interfaces,
                 description=definition.description,
+                _fields=fields,
             )
-            type_definition._fields = fields
             type_definition._type_params = {}
 
             copied_type = builtins.type(
-                name, (), {"_type_definition": type_definition},
+                name,
+                (),
+                {"_type_definition": type_definition},
             )
 
             if not hasattr(base, "_copies"):
@@ -99,6 +125,9 @@ def copy_type_with(
             return copied_type
 
     if is_type_var(base):
-        return params_to_type[base]
+        # TODO: we ignore the type issue here as we'll improve how types
+        # are represented internally (using StrawberryTypes) so we can improve
+        # typings later
+        return params_to_type[base]  # type: ignore
 
     return base

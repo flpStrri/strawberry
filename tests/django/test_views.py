@@ -1,15 +1,16 @@
 import json
-from typing import Optional
+from typing import Any, Optional
 
 import pytest
 
+from django.core.exceptions import SuspiciousOperation
 from django.http import Http404
 from django.test.client import RequestFactory
 
 import strawberry
 from strawberry.django.views import GraphQLView as BaseGraphQLView
 from strawberry.permission import BasePermission
-from strawberry.schema import ExecutionResult
+from strawberry.types import ExecutionResult, Info
 
 from .app.models import Example
 
@@ -17,7 +18,7 @@ from .app.models import Example
 class AlwaysFailPermission(BasePermission):
     message = "You are not authorized"
 
-    def has_permission(self, source, info):
+    def has_permission(self, source: Any, info: Info, **kwargs) -> bool:
         return False
 
 
@@ -25,21 +26,34 @@ class AlwaysFailPermission(BasePermission):
 class Query:
     hello: str = "strawberry"
 
-    @strawberry.field
-    async def hello_async(self, info) -> str:
-        return "async strawberry"
-
     @strawberry.field(permission_classes=[AlwaysFailPermission])
-    def always_fail(self, info) -> Optional[str]:
+    def always_fail(self) -> Optional[str]:
         return "Hey"
 
     @strawberry.field
-    async def example_async(self, info) -> str:
+    def example(self) -> str:
         return Example.objects.first().name
 
+
+@strawberry.type
+class GetRequestValueWithDotNotationQuery:
     @strawberry.field
-    def example(self, info) -> str:
-        return Example.objects.first().name
+    def get_request_value(self, info: Info) -> str:
+        return info.context.request
+
+
+@strawberry.type
+class GetRequestValueUsingGetQuery:
+    @strawberry.field
+    def get_request_value(self, info: Info) -> str:
+        return info.context.get("request")
+
+
+@strawberry.type
+class GetRequestValueQuery:
+    @strawberry.field
+    def get_request_value(self, info: Info) -> str:
+        return info.context["request"]
 
 
 schema = strawberry.Schema(query=Query)
@@ -59,6 +73,30 @@ def test_graphiql_view():
     body = response.content.decode()
 
     assert "GraphiQL" in body
+
+
+@pytest.mark.parametrize("method", ["DELETE", "HEAD", "PUT", "PATCH"])
+def test_disabled_methods(method):
+    factory = RequestFactory()
+
+    rf = getattr(factory, method.lower())
+
+    request = rf("/graphql/")
+
+    response = GraphQLView.as_view(schema=schema, graphiql=False)(request)
+
+    assert response.status_code == 405
+
+
+def test_fails_when_not_sending_query():
+    factory = RequestFactory()
+
+    request = factory.post("/graphql/")
+
+    with pytest.raises(SuspiciousOperation) as e:
+        GraphQLView.as_view(schema=schema, graphiql=False)(request)
+
+        assert e.value.args == ("No GraphQL query found in the request",)
 
 
 def test_graphiql_disabled_view():
@@ -101,37 +139,7 @@ def test_graphql_query_model():
     assert not data.get("errors")
     assert data["data"]["example"] == "This is a demo"
 
-
-@pytest.mark.xfail(reason="We don't support async on django at the moment")
-def test_async_graphql_query():
-    query = "{ helloAsync }"
-
-    factory = RequestFactory()
-    request = factory.post(
-        "/graphql/", {"query": query}, content_type="application/json"
-    )
-
-    response = GraphQLView.as_view(schema=schema)(request)
-    data = json.loads(response.content.decode())
-
-    assert data["data"]["helloAsync"] == "async strawberry"
-
-
-@pytest.mark.xfail(reason="We don't support async on django at the moment")
-def test_async_graphql_query_model():
-    Example.objects.create(name="This is a demo async")
-
-    query = "{ exampleAsync }"
-
-    factory = RequestFactory()
-    request = factory.post(
-        "/graphql/", {"query": query}, content_type="application/json"
-    )
-
-    response = GraphQLView.as_view(schema=schema)(request)
-    data = json.loads(response.content.decode())
-
-    assert data["data"]["exampleAsync"] == "This is a demo async"
+    Example.objects.all().delete()
 
 
 def test_returns_errors_and_data():
@@ -154,20 +162,41 @@ def test_returns_errors_and_data():
     assert data["errors"][0]["message"] == "You are not authorized"
 
 
+@pytest.mark.parametrize(
+    "query",
+    (
+        GetRequestValueWithDotNotationQuery,
+        GetRequestValueUsingGetQuery,
+        GetRequestValueQuery,
+    ),
+)
+def test_strawberry_django_context(query):
+    factory = RequestFactory()
+
+    schema = strawberry.Schema(query=query)
+
+    query = "{ getRequestValue }"
+    request = factory.post(
+        "/graphql/", {"query": query}, content_type="application/json"
+    )
+
+    response = GraphQLView.as_view(schema=schema)(request)
+    data = json.loads(response.content.decode())
+    assert response.status_code == 200
+    assert data["data"] == {"getRequestValue": "<WSGIRequest: POST '/graphql/'>"}
+
+
 def test_custom_context():
     class CustomGraphQLView(BaseGraphQLView):
         def get_context(self, request):
-            return {
-                "request": request,
-                "custom_value": "Hi!",
-            }
+            return {"request": request, "custom_value": "Hi!"}
 
     factory = RequestFactory()
 
     @strawberry.type
     class Query:
         @strawberry.field
-        def custom_context_value(self, info) -> str:
+        def custom_context_value(self, info: Info) -> str:
             return info.context["custom_value"]
 
     schema = strawberry.Schema(query=Query)
@@ -194,7 +223,7 @@ def test_custom_process_result():
     @strawberry.type
     class Query:
         @strawberry.field
-        def abc(self, info) -> str:
+        def abc(self) -> str:
             return "ABC"
 
     schema = strawberry.Schema(query=Query)

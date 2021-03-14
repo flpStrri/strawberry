@@ -2,9 +2,13 @@ import dataclasses
 import sys
 from typing import Dict, List, Optional, Type, Union, cast
 
-from strawberry.exceptions import MissingTypesForGenericError
+from strawberry.exceptions import (
+    MissingTypesForGenericError,
+    PrivateStrawberryFieldError,
+)
 from strawberry.lazy_type import LazyType
-from strawberry.union import union
+from strawberry.private import Private
+from strawberry.union import StrawberryUnion, union
 from strawberry.utils.str_converters import to_camel_case
 from strawberry.utils.typing import (
     get_args,
@@ -54,19 +58,20 @@ def resolve_type(field_definition: Union[FieldDefinition, ArgumentDefinition]) -
     type = cast(Type, field_definition.type)
     origin_name = cast(str, field_definition.origin_name)
 
-    if isinstance(type, LazyType):
-        field_definition.type = type.resolve_type()
-
     if isinstance(type, str):
         module = sys.modules[field_definition.origin.__module__].__dict__
 
         type = eval(type, module)
         field_definition.type = type
 
+    if isinstance(type, LazyType):
+        field_definition.type = type.resolve_type()
+        type = cast(Type, field_definition.type)
+
     if is_forward_ref(type):
         # if the type is a forward reference we try to resolve the type by
         # finding it in the global namespace of the module where the field
-        # was intially declared. This will break when the type is not declared
+        # was initially declared. This will break when the type is not declared
         # in the main scope, but we don't want to support that use case
         # see https://mail.python.org/archives/list/typing-sig@python.org/thread/SNKJB2U5S74TWGDWVD6FMXOP63WVIGDR/  # noqa: E501
 
@@ -170,7 +175,7 @@ def resolve_type(field_definition: Union[FieldDefinition, ArgumentDefinition]) -
         if not all(is_type_var(a) for a in args):
             field_definition.type = copy_type_with(type, *args)
 
-    if hasattr(type, "_union_definition"):
+    if isinstance(type, StrawberryUnion):
         field_definition.is_union = True
 
 
@@ -184,8 +189,8 @@ def _get_type_params_for_field(
 
     type = cast(Type, field_definition.type)
 
-    if hasattr(type, "_union_definition"):
-        types = type._union_definition.types
+    if isinstance(type, StrawberryUnion):
+        types = type.types
         type_vars = [t for t in types if is_type_var(t)]
 
         if type_vars:
@@ -222,36 +227,86 @@ def _resolve_types(fields: List[FieldDefinition]) -> List[FieldDefinition]:
 
 
 def _get_fields(cls: Type) -> List[FieldDefinition]:
-    fields = []
+    """Get all the strawberry field definitions off a strawberry.type cls
 
-    # get all the fields from the dataclass
-    dataclass_fields = dataclasses.fields(cls)
+    This function returns a list of FieldDefinitions (one for each field item), while
+    also paying attention the name and typing of the field.
 
-    # plus the fields that are defined with the resolvers, using
-    # the @strawberry.field decorator
-    dataclass_fields += tuple(
-        field for field in cls.__dict__.values() if hasattr(field, "_field_definition")
-    )
+    Strawberry fields can be defined on a strawberry.type class as either a dataclass-
+    style field or using strawberry.field as a decorator.
 
-    seen_fields = set()
+    >>> import strawberry
+    >>> @strawberry.type
+    ... class Query:
+    ...     type_1a: int = 5
+    ...     type_1b: int = strawberry.field(...)
+    ...     type_1c: int = strawberry.field(resolver=...)
+    ...
+    ...     @strawberry.field
+    ...     def type_2(self) -> int:
+    ...         ...
 
-    for field in dataclass_fields:
-        if hasattr(field, "_field_definition"):
-            field_definition = field._field_definition  # type: ignore
+    Type #1:
+        A pure dataclass-style field. Will not have a FieldDefinition; one will
+        need to be created in this function. Type annotation is required.
 
-            # we make sure that the origin is either the field's resolver
-            # when called as:
+    Type #2:
+        A field defined using @strawberry.field as a decorator around the
+        resolver. The resolver must be type-annotated.
+
+    The FieldDefinition.name value will be assigned to the field's name on the class if
+    one is not set by either using an explicit strawberry.field(name=...) or by passing
+    a named function (i.e. not an anonymous lambda) to strawberry.field (typically as a
+    decorator).
+    """
+    field_definitions: Dict[str, FieldDefinition] = {}
+
+    # before trying to find any fields, let's first add the fields defined in
+    # parent classes, we do this by checking if parents have a type definition
+    for base in cls.__bases__:
+        if hasattr(base, "_type_definition"):
+            base_field_definitions = {
+                field.origin_name: field
+                # TODO: we need to rename _fields to something else
+                for field in base._type_definition._fields  # type: ignore
+            }
+
+            # Add base's field definitions to cls' field definitions
+            field_definitions = {**field_definitions, **base_field_definitions}
+
+    # Deferred import to avoid import cycles
+    from strawberry.field import StrawberryField
+
+    # then we can proceed with finding the fields for the current class
+    for field in dataclasses.fields(cls):
+
+        if isinstance(field, StrawberryField):
+            # Use the existing FieldDefinition
+            field_definition = field._field_definition
+
+            # Check that the field type is not Private
+            if isinstance(field_definition.type, Private):
+                raise PrivateStrawberryFieldError(field.name, cls.__name__)
+
+            # we make sure that the origin is either the field's resolver when
+            # called as:
+            #
             # >>> @strawberry.field
-            # >>> def x(self): ...
+            # ... def x(self): ...
+            #
             # or the class where this field was defined, so we always have
             # the correct origin for determining field types when resolving
             # the types.
-
             field_definition.origin = field_definition.origin or cls
-        else:
-            # for fields that don't have a field definition, we create one
-            # based on the dataclass field
+            field_definition.origin_name = field.name
 
+        # Create a FieldDefinition for fields that didn't use strawberry.field
+        else:
+            # Only ignore Private fields that weren't defined using StrawberryFields
+            if isinstance(field.type, Private):
+                continue
+
+            # Create a FieldDefinition, for fields of Types #1 and #2a
             field_definition = FieldDefinition(
                 origin_name=field.name,
                 name=to_camel_case(field.name),
@@ -260,22 +315,11 @@ def _get_fields(cls: Type) -> List[FieldDefinition]:
                 default_value=getattr(cls, field.name, undefined),
             )
 
-        fields.append(field_definition)
-        seen_fields.add(field_definition.origin_name)
+        field_name = field_definition.origin_name
 
-    # let's also add fields that are declared with @strawberry.field in
-    # parent classes, we do this by checking if parents have a type definition
-    # and we haven't seen a field already
+        assert_message = "Field must have a name by the time the schema is generated"
+        assert field_name is not None, assert_message
 
-    # TODO: maybe we want to add a warning when overriding a field, as it might be
-    # a mistake
+        field_definitions[field_name] = field_definition
 
-    for base in cls.__bases__:
-        if hasattr(base, "_type_definition"):
-            fields += [
-                field
-                for field in base._type_definition.fields  # type: ignore
-                if field.origin_name not in seen_fields
-            ]
-
-    return fields
+    return list(field_definitions.values())

@@ -3,6 +3,7 @@ from typing import Optional
 from uuid import UUID
 
 import strawberry
+from strawberry.arguments import UNSET
 from strawberry.printer import print_schema
 
 
@@ -23,29 +24,15 @@ def test_simple_required_types():
       b: Boolean!
       f: Float!
       id: ID!
-      uid: ID!
+      uid: UUID!
     }
+
+    scalar UUID
     """
 
     schema = strawberry.Schema(query=Query)
 
     assert print_schema(schema) == textwrap.dedent(expected_type).strip()
-
-
-# def test_recursive_type():
-#     @strawberry.type
-#     class Query:
-#         s: "Query"
-
-#     expected_type = """
-#     type Query {
-#       s: Query!
-#     }
-#     """
-
-#     schema = strawberry.Schema(query=Query)
-
-#     assert print_schema(schema) == textwrap.dedent(expected_type).strip()
 
 
 def test_optional():
@@ -87,12 +74,14 @@ def test_input_simple_required_types():
       b: Boolean!
       f: Float!
       id: ID!
-      uid: ID!
+      uid: UUID!
     }
 
     type Query {
       search(input: MyInput!): String!
     }
+
+    scalar UUID
     """
 
     schema = strawberry.Schema(query=Query)
@@ -105,6 +94,7 @@ def test_input_defaults():
     class MyInput:
         s: Optional[str] = None
         i: int = 0
+        x: Optional[int] = UNSET
 
     @strawberry.type
     class Query:
@@ -116,6 +106,7 @@ def test_input_defaults():
     input MyInput {
       s: String = null
       i: Int! = 0
+      x: Int
     }
 
     type Query {

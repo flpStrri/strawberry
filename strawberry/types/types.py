@@ -1,8 +1,12 @@
 import dataclasses
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Type, Union
 
 from strawberry.permission import BasePermission
+from strawberry.union import StrawberryUnion
 
+
+if TYPE_CHECKING:
+    from strawberry.types.fields.resolver import StrawberryResolver
 
 undefined = object()
 
@@ -24,9 +28,7 @@ class TypeDefinition:
     federation: FederationTypeParams
     interfaces: List["TypeDefinition"]
 
-    _fields: List["FieldDefinition"] = dataclasses.field(
-        default_factory=list, init=False
-    )
+    _fields: List["FieldDefinition"]
     _type_params: Dict[str, Type] = dataclasses.field(default_factory=dict, init=False)
 
     def get_field(self, name: str) -> Optional["FieldDefinition"]:
@@ -34,15 +36,9 @@ class TypeDefinition:
 
     @property
     def fields(self) -> List["FieldDefinition"]:
-        if not self._fields:
-            from .type_resolver import _get_fields, _resolve_types
+        from .type_resolver import _resolve_types
 
-            fields = _get_fields(self.origin)
-            self._fields = _resolve_types(fields)
-
-        # type_params =
-
-        return self._fields
+        return _resolve_types(self._fields)
 
     @property
     def type_params(self) -> Dict[str, Type]:
@@ -81,8 +77,8 @@ class FederationFieldParams:
 class FieldDefinition:
     name: Optional[str]
     origin_name: Optional[str]
-    type: Optional[Type]
-    origin: Type
+    type: Optional[Union[Type, StrawberryUnion]]
+    origin: Optional[Union[Type, Callable]] = None
     child: Optional["FieldDefinition"] = None
     is_subscription: bool = False
     is_optional: bool = False
@@ -94,8 +90,9 @@ class FieldDefinition:
     )
     arguments: List[ArgumentDefinition] = dataclasses.field(default_factory=list)
     description: Optional[str] = None
-    base_resolver: Optional[Callable] = None
+    base_resolver: Optional["StrawberryResolver"] = None
     permission_classes: List[Type[BasePermission]] = dataclasses.field(
         default_factory=list
     )
     default_value: Any = undefined
+    deprecation_reason: Optional[str] = None

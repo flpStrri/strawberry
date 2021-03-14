@@ -2,7 +2,10 @@ import base64
 import uuid
 from typing import NewType
 
+import pytest
+
 import strawberry
+from strawberry.exceptions import ScalarAlreadyRegisteredError
 
 
 Base64Encoded = strawberry.scalar(
@@ -24,7 +27,7 @@ def test_custom_scalar_serialization():
     @strawberry.type
     class Query:
         @strawberry.field
-        def custom_scalar_field(self, info) -> Base64Encoded:
+        def custom_scalar_field(self) -> Base64Encoded:
             return Base64Encoded(b"decoded value")
 
     schema = strawberry.Schema(Query)
@@ -39,7 +42,7 @@ def test_custom_scalar_deserialization():
     @strawberry.type
     class Query:
         @strawberry.field
-        def decode_base64(self, info, encoded: Base64Encoded) -> str:
+        def decode_base64(self, encoded: Base64Encoded) -> str:
             return bytes(encoded).decode("ascii")
 
     schema = strawberry.Schema(Query)
@@ -58,7 +61,7 @@ def test_custom_scalar_decorated_class():
     @strawberry.type
     class Query:
         @strawberry.field
-        def answer(self, info) -> Always42:
+        def answer(self) -> Always42:
             return Always42()
 
     schema = strawberry.Schema(Query)
@@ -73,7 +76,7 @@ def test_custom_scalar_default_serialization():
     @strawberry.type
     class Query:
         @strawberry.field
-        def my_str(self, info, arg: MyStr) -> MyStr:
+        def my_str(self, arg: MyStr) -> MyStr:
             return MyStr(str(arg) + "Suffix")
 
     schema = strawberry.Schema(Query)
@@ -84,18 +87,8 @@ def test_custom_scalar_default_serialization():
     assert result.data["myStr"] == "valueSuffix"
 
 
-def test_can_register_python_types():
-    strawberry.scalar(uuid.UUID, name="UUID", serialize=str, parse_value=uuid.UUID)
+def test_error_when_registering_duplicate_scalar():
+    with pytest.raises(ScalarAlreadyRegisteredError) as error:
+        strawberry.scalar(uuid.UUID, name="UUID", serialize=str, parse_value=uuid.UUID)
 
-    @strawberry.type
-    class Query:
-        @strawberry.field
-        def answer(self, info) -> uuid.UUID:
-            return uuid.UUID(int=1)
-
-    schema = strawberry.Schema(Query)
-
-    result = schema.execute_sync("{ answer }")
-
-    assert not result.errors
-    assert result.data["answer"] == "00000000-0000-0000-0000-000000000001"
+    assert str(error.value) == "Scalar `UUID` has already been registered"

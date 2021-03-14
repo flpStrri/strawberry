@@ -1,6 +1,5 @@
 ---
-title: Getting started
-path: /docs/
+title: Getting started with Strawberry
 ---
 
 # Getting started with Strawberry
@@ -29,10 +28,10 @@ After that we need a new virtualenv:
 
     python -m venv virtualenv
 
-Activate the virtualenv and then install strawberry
+Activate the virtualenv and then install strawberry plus the debug server.
 
     source virtualenv/bin/activate
-    pip install strawberry-graphql
+    pip install strawberry-graphql[debug-server]
 
 ## Step 2: Define the schema
 
@@ -167,6 +166,6 @@ Well done! You just created your first GraphQL API using Strawberry 🙌!
 
 Check out the following resources to learn more about GraphQL and Strawberry.
 
-- [Schema Basics](/docs/schema-basics)
-- [Resolvers](/docs/types/resolvers)
-- [Deployment](/docs/ops/deployment)
+- [Schema Basics](/docs/general/schema-basics.md)
+- [Resolvers](/docs/types/resolvers.md)
+- [Deployment](/docs/operations/deployment.md)

@@ -3,6 +3,7 @@ import asyncio
 import pytest
 
 import starlette
+
 from strawberry.asgi.constants import (
     GQL_COMPLETE,
     GQL_CONNECTION_ACK,
@@ -81,12 +82,12 @@ def test_sends_keep_alive(test_client_keep_alive):
         assert response["type"] == GQL_CONNECTION_KEEP_ALIVE
 
         response = ws.receive_json()
-        assert response["type"] == GQL_CONNECTION_KEEP_ALIVE
-
-        response = ws.receive_json()
         assert response["type"] == GQL_DATA
         assert response["id"] == "demo"
         assert response["payload"]["data"] == {"example": "Hi"}
+
+        response = ws.receive_json()
+        assert response["type"] == GQL_CONNECTION_KEEP_ALIVE
 
         response = ws.receive_json()
         assert response["type"] == GQL_COMPLETE

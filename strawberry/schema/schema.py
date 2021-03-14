@@ -1,17 +1,26 @@
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any, Dict, List, Optional, Sequence, Type, Union
 
-from graphql import GraphQLSchema, graphql_sync, parse
+from graphql import (
+    ExecutionContext as GraphQLExecutionContext,
+    GraphQLSchema,
+    get_introspection_query,
+    parse,
+    validate_schema,
+)
 from graphql.subscription import subscribe
 from graphql.type.directives import specified_directives
+
 from strawberry.custom_scalar import ScalarDefinition
 from strawberry.enum import EnumDefinition
+from strawberry.extensions import Extension
+from strawberry.schema.schema_converter import GraphQLCoreConverter
+from strawberry.types import ExecutionResult
 from strawberry.types.types import TypeDefinition
+from strawberry.union import StrawberryUnion
 
-# TODO: get rid of this module ?
-from ..graphql import execute
 from ..middleware import DirectivesMiddleware, Middleware
 from ..printer import print_schema
-from .types import ConcreteType, get_directive_type, get_object_type
+from .execute import execute, execute_sync
 
 
 class Schema:
@@ -23,20 +32,28 @@ class Schema:
         subscription: Optional[Type] = None,
         directives=(),
         types=(),
+        extensions: Sequence[Type[Extension]] = (),
+        execution_context_class: Optional[Type[GraphQLExecutionContext]] = None,
     ):
+        self.extensions = extensions
+        self.execution_context_class = execution_context_class
+        self.schema_converter = GraphQLCoreConverter()
 
-        self.type_map: Dict[str, ConcreteType] = {}
-
-        query_type = get_object_type(query, self.type_map)
-        mutation_type = get_object_type(mutation, self.type_map) if mutation else None
+        query_type = self.schema_converter.from_object_type(query)
+        mutation_type = (
+            self.schema_converter.from_object_type(mutation) if mutation else None
+        )
         subscription_type = (
-            get_object_type(subscription, self.type_map) if subscription else None
+            self.schema_converter.from_object_type(subscription)
+            if subscription
+            else None
         )
 
         self.middleware: List[Middleware] = [DirectivesMiddleware(directives)]
 
         directives = [
-            get_directive_type(directive, self.type_map) for directive in directives
+            self.schema_converter.from_directive(directive.directive_definition)
+            for directive in directives
         ]
 
         self._schema = GraphQLSchema(
@@ -44,20 +61,27 @@ class Schema:
             mutation=mutation_type,
             subscription=subscription_type if subscription else None,
             directives=specified_directives + directives,
-            types=[get_object_type(type, self.type_map) for type in types],
+            types=list(map(self.schema_converter.from_object_type, types)),
         )
 
-        self.query = self.type_map[query_type.name]
+        # Validate schema early because we want developers to know about
+        # possible issues as soon as possible
+        errors = validate_schema(self._schema)
+        if errors:
+            formatted_errors = "\n\n".join(f"❌ {error.message}" for error in errors)
+            raise ValueError(f"Invalid Schema. Errors:\n\n{formatted_errors}")
+
+        self.query = self.schema_converter.type_map[query_type.name]
 
     def get_type_by_name(
         self, name: str
-    ) -> Optional[Union[TypeDefinition, ScalarDefinition, EnumDefinition]]:
-        if name in self.type_map:
-            return self.type_map[name].definition
+    ) -> Optional[
+        Union[TypeDefinition, ScalarDefinition, EnumDefinition, StrawberryUnion]
+    ]:
+        if name in self.schema_converter.type_map:
+            return self.schema_converter.type_map[name].definition
 
         return None
-
-    # TODO: type return value of these
 
     async def execute(
         self,
@@ -66,15 +90,25 @@ class Schema:
         context_value: Optional[Any] = None,
         root_value: Optional[Any] = None,
         operation_name: Optional[str] = None,
-    ):
-        return await execute(
+        validate_queries: bool = True,
+    ) -> ExecutionResult:
+        result = await execute(
             self._schema,
             query,
             variable_values=variable_values,
             root_value=root_value,
             context_value=context_value,
-            middleware=self.middleware,
             operation_name=operation_name,
+            additional_middlewares=self.middleware,
+            extensions=self.extensions,
+            execution_context_class=self.execution_context_class,
+            validate_queries=validate_queries,
+        )
+
+        return ExecutionResult(
+            data=result.data,
+            errors=result.errors,
+            extensions=result.extensions,
         )
 
     def execute_sync(
@@ -84,15 +118,25 @@ class Schema:
         context_value: Optional[Any] = None,
         root_value: Optional[Any] = None,
         operation_name: Optional[str] = None,
-    ):
-        return graphql_sync(
+        validate_queries: bool = True,
+    ) -> ExecutionResult:
+        result = execute_sync(
             self._schema,
             query,
             variable_values=variable_values,
             root_value=root_value,
             context_value=context_value,
-            middleware=self.middleware,
             operation_name=operation_name,
+            additional_middlewares=self.middleware,
+            extensions=self.extensions,
+            execution_context_class=self.execution_context_class,
+            validate_queries=validate_queries,
+        )
+
+        return ExecutionResult(
+            data=result.data,
+            errors=result.errors,
+            extensions=result.extensions,
         )
 
     async def subscribe(
@@ -114,3 +158,17 @@ class Schema:
 
     def as_str(self) -> str:
         return print_schema(self)
+
+    __str__ = as_str
+
+    def introspect(self) -> Dict[str, Any]:
+        """Return the introspection query result for the current schema
+
+        Raises:
+            ValueError: If the introspection query fails due to an invalid schema
+        """
+        introspection = self.execute_sync(get_introspection_query())
+        if introspection.errors or not introspection.data:
+            raise ValueError(f"Invalid Schema. Errors {introspection.errors!r}")
+
+        return introspection.data

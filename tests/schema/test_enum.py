@@ -1,5 +1,8 @@
 import typing
 from enum import Enum
+from typing import List, Optional
+
+import pytest
 
 import strawberry
 
@@ -14,7 +17,7 @@ def test_enum_resolver():
     @strawberry.type
     class Query:
         @strawberry.field
-        def best_flavour(self, info) -> IceCreamFlavour:
+        def best_flavour(self) -> IceCreamFlavour:
             return IceCreamFlavour.STRAWBERRY
 
     schema = strawberry.Schema(query=Query)
@@ -33,7 +36,7 @@ def test_enum_resolver():
     @strawberry.type
     class Query:
         @strawberry.field
-        def cone(self, info) -> Cone:
+        def cone(self) -> Cone:
             return Cone(flavour=IceCreamFlavour.STRAWBERRY)
 
     schema = strawberry.Schema(query=Query)
@@ -56,7 +59,7 @@ def test_enum_arguments():
     @strawberry.type
     class Query:
         @strawberry.field
-        def flavour_available(self, info, flavour: IceCreamFlavour) -> bool:
+        def flavour_available(self, flavour: IceCreamFlavour) -> bool:
             return flavour == IceCreamFlavour.STRAWBERRY
 
     @strawberry.input
@@ -66,7 +69,7 @@ def test_enum_arguments():
     @strawberry.type
     class Mutation:
         @strawberry.mutation
-        def eat_cone(self, info, input: ConeInput) -> bool:
+        def eat_cone(self, input: ConeInput) -> bool:
             return input.flavour == IceCreamFlavour.STRAWBERRY
 
     schema = strawberry.Schema(query=Query, mutation=Mutation)
@@ -110,7 +113,7 @@ def test_enum_falsy_values():
     @strawberry.type
     class Query:
         @strawberry.field
-        def print_flavour(self, info, input: Input) -> str:
+        def print_flavour(self, input: Input) -> str:
             return f"{input.flavour.value}"
 
     schema = strawberry.Schema(query=Query)
@@ -126,3 +129,100 @@ def test_enum_falsy_values():
 
     assert not result.errors
     assert result.data["printFlavour"] == "0"
+
+
+def test_enum_in_list():
+    @strawberry.enum
+    class IceCreamFlavour(Enum):
+        VANILLA = "vanilla"
+        STRAWBERRY = "strawberry"
+        CHOCOLATE = "chocolate"
+        PISTACHIO = "pistachio"
+
+    @strawberry.type
+    class Query:
+        @strawberry.field
+        def best_flavours(self) -> List[IceCreamFlavour]:
+            return [IceCreamFlavour.STRAWBERRY, IceCreamFlavour.PISTACHIO]
+
+    schema = strawberry.Schema(query=Query)
+
+    query = "{ bestFlavours }"
+
+    result = schema.execute_sync(query)
+
+    assert not result.errors
+    assert result.data["bestFlavours"] == ["STRAWBERRY", "PISTACHIO"]
+
+
+def test_enum_in_optional_list():
+    @strawberry.enum
+    class IceCreamFlavour(Enum):
+        VANILLA = "vanilla"
+        STRAWBERRY = "strawberry"
+        CHOCOLATE = "chocolate"
+        PISTACHIO = "pistachio"
+
+    @strawberry.type
+    class Query:
+        @strawberry.field
+        def best_flavours(self) -> Optional[List[IceCreamFlavour]]:
+            return None
+
+    schema = strawberry.Schema(query=Query)
+
+    query = "{ bestFlavours }"
+
+    result = schema.execute_sync(query)
+
+    assert not result.errors
+    assert result.data["bestFlavours"] is None
+
+
+@pytest.mark.asyncio
+async def test_enum_resolver_async():
+    @strawberry.enum
+    class IceCreamFlavour(Enum):
+        VANILLA = "vanilla"
+        STRAWBERRY = "strawberry"
+        CHOCOLATE = "chocolate"
+
+    @strawberry.type
+    class Query:
+        @strawberry.field
+        async def best_flavour(self) -> IceCreamFlavour:
+            return IceCreamFlavour.STRAWBERRY
+
+    schema = strawberry.Schema(query=Query)
+
+    query = "{ bestFlavour }"
+
+    result = await schema.execute(query)
+
+    assert not result.errors
+    assert result.data["bestFlavour"] == "STRAWBERRY"
+
+
+@pytest.mark.asyncio
+async def test_enum_in_list_async():
+    @strawberry.enum
+    class IceCreamFlavour(Enum):
+        VANILLA = "vanilla"
+        STRAWBERRY = "strawberry"
+        CHOCOLATE = "chocolate"
+        PISTACHIO = "pistachio"
+
+    @strawberry.type
+    class Query:
+        @strawberry.field
+        async def best_flavours(self) -> List[IceCreamFlavour]:
+            return [IceCreamFlavour.STRAWBERRY, IceCreamFlavour.PISTACHIO]
+
+    schema = strawberry.Schema(query=Query)
+
+    query = "{ bestFlavours }"
+
+    result = await schema.execute(query)
+
+    assert not result.errors
+    assert result.data["bestFlavours"] == ["STRAWBERRY", "PISTACHIO"]

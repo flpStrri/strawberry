@@ -1,3 +1,4 @@
+from textwrap import dedent
 from typing import Optional, Union
 
 import strawberry
@@ -78,7 +79,7 @@ def test_union_as_mutation_return():
     @strawberry.type
     class Mutation:
         @strawberry.mutation
-        def hello(self, info) -> Union[A, B]:
+        def hello(self) -> Union[A, B]:
             return B(y=5)
 
     schema = strawberry.Schema(query=A, mutation=Mutation)
@@ -121,7 +122,7 @@ def test_types_not_included_in_the_union_are_rejected():
     @strawberry.type
     class Mutation:
         @strawberry.mutation
-        def hello(self, info) -> Union[A, B]:
+        def hello(self) -> Union[A, B]:
             return Outside(c=5)  # type:ignore
 
     schema = strawberry.Schema(query=A, mutation=Mutation, types=[Outside])
@@ -312,3 +313,40 @@ def test_multiple_unions():
         "fields": [{"name": "field1"}, {"name": "field2"}],
         "name": "CoolType",
     }
+
+
+def test_union_used_multiple_times():
+    @strawberry.type
+    class A:
+        a: int
+
+    @strawberry.type
+    class B:
+        b: int
+
+    MyUnion = strawberry.union("MyUnion", types=(A, B))
+
+    @strawberry.type
+    class Query:
+        field1: MyUnion
+        field2: MyUnion
+
+    schema = strawberry.Schema(query=Query)
+
+    assert schema.as_str() == dedent(
+        """\
+        type A {
+          a: Int!
+        }
+
+        type B {
+          b: Int!
+        }
+
+        union MyUnion = A | B
+
+        type Query {
+          field1: MyUnion!
+          field2: MyUnion!
+        }"""
+    )

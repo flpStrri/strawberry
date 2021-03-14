@@ -2,6 +2,8 @@ import datetime
 
 import pytest
 
+import dateutil.tz
+
 import strawberry
 
 
@@ -21,7 +23,7 @@ def test_serialization(typing, instance, serialized):
     @strawberry.type
     class Query:
         @strawberry.field
-        def serialize(self, info) -> typing:
+        def serialize(self) -> typing:
             return instance
 
     schema = strawberry.Schema(Query)
@@ -42,6 +44,12 @@ def test_serialization(typing, instance, serialized):
             datetime.datetime(2019, 10, 25, 13, 37),
             "2019-10-25T13:37:00",
         ),
+        (
+            datetime.datetime,
+            "DateTime",
+            datetime.datetime(2019, 10, 25, 13, 37, tzinfo=dateutil.tz.tzutc()),
+            "2019-10-25T13:37:00Z",
+        ),
         (datetime.time, "Time", datetime.time(13, 37), "13:37:00"),
     ],
 )
@@ -51,7 +59,7 @@ def test_deserialization(typing, name, instance, serialized):
         deserialized = None
 
         @strawberry.field
-        def deserialize(self, info, arg: typing) -> bool:
+        def deserialize(self, arg: typing) -> bool:
             Query.deserialized = arg
             return True
 
@@ -84,7 +92,7 @@ def test_deserialization_with_parse_literal(typing, instance, serialized):
         deserialized = None
 
         @strawberry.field
-        def deserialize(self, info, arg: typing) -> bool:
+        def deserialize(self, arg: typing) -> bool:
             Query.deserialized = arg
             return True
 

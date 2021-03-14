@@ -27,7 +27,7 @@ def test_entities_type_when_no_type_has_keys():
     @strawberry.federation.type
     class Query:
         @strawberry.field
-        def top_products(self, info, first: int) -> List[Product]:
+        def top_products(self, first: int) -> List[Product]:
             return []
 
     schema = strawberry.federation.Schema(query=Query)
@@ -66,20 +66,3 @@ def test_entities_type_when_no_type_has_keys():
     assert schema.as_str() == textwrap.dedent(expected).strip()
 
     del Review
-
-
-# type Review {
-#   body: String
-#   author: User @provides(fields: "username")
-#   product: Product
-# }
-
-# extend type User @key(fields: "id") {
-#   id: ID! @external
-#   reviews: [Review]
-# }
-
-# extend type Product @key(fields: "upc") {
-#   upc: String! @external
-#   reviews: [Review]
-# }

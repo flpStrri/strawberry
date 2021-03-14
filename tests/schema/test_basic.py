@@ -1,9 +1,26 @@
+import textwrap
 import typing
 from dataclasses import InitVar, dataclass
 from enum import Enum
 from typing import Optional
 
+import pytest
+
 import strawberry
+
+
+def test_raises_exception_with_unsupported_types():
+    class SomeType:
+        ...
+
+    @strawberry.type
+    class Query:
+        example: SomeType
+
+    with pytest.raises(
+        TypeError, match="Query fields cannot be resolved. Unexpected type '.*'"
+    ):
+        strawberry.Schema(query=Query)
 
 
 def test_basic_schema():
@@ -59,7 +76,7 @@ def test_does_camel_case_conversion():
     @strawberry.type
     class Query:
         @strawberry.field
-        def hello_world(self, info, query_param: str) -> str:
+        def hello_world(self, query_param: str) -> str:
             return query_param
 
     schema = strawberry.Schema(query=Query)
@@ -82,11 +99,11 @@ def test_can_rename_fields():
     @strawberry.type
     class Query:
         @strawberry.field
-        def hello(self, info) -> Hello:
+        def hello(self) -> Hello:
             return Hello("hi")
 
         @strawberry.field(name="example1")
-        def example(self, info, query_param: str) -> str:
+        def example(self, query_param: str) -> str:
             return query_param
 
     schema = strawberry.Schema(query=Query)
@@ -136,11 +153,11 @@ def test_field_description():
         a: str = strawberry.field(description="Example")
 
         @strawberry.field
-        def b(self, info, id: int) -> str:
+        def b(self, id: int) -> str:
             return "I'm a resolver"
 
         @strawberry.field(description="Example C")
-        def c(self, info, id: int) -> str:
+        def c(self, id: int) -> str:
             return "I'm a resolver"
 
     schema = strawberry.Schema(query=Query)
@@ -162,6 +179,70 @@ def test_field_description():
         {"name": "a", "description": "Example"},
         {"name": "b", "description": None},
         {"name": "c", "description": "Example C"},
+    ]
+
+
+def test_field_deprecated_reason():
+    @strawberry.type
+    class Query:
+        a: str = strawberry.field(deprecation_reason="Deprecated A")
+
+        @strawberry.field
+        def b(self, id: int) -> str:
+            return "I'm a resolver"
+
+        @strawberry.field(deprecation_reason="Deprecated B")
+        def c(self, id: int) -> str:
+            return "I'm a resolver"
+
+    schema = strawberry.Schema(query=Query)
+
+    query = """{
+        __type(name: "Query") {
+            fields(includeDeprecated: true) {
+                name
+                deprecationReason
+            }
+        }
+    }"""
+
+    result = schema.execute_sync(query)
+
+    assert not result.errors
+    assert result.data["__type"]["fields"] == [
+        {"name": "a", "deprecationReason": "Deprecated A"},
+        {"name": "b", "deprecationReason": None},
+        {"name": "c", "deprecationReason": "Deprecated B"},
+    ]
+
+
+def test_field_deprecated_reason_subscription():
+    @strawberry.type
+    class Query:
+        a: str
+
+    @strawberry.type
+    class Subscription:
+        @strawberry.subscription(deprecation_reason="Deprecated A")
+        def a(self) -> str:
+            return "A"
+
+    schema = strawberry.Schema(query=Query, subscription=Subscription)
+
+    query = """{
+        __type(name: "Subscription") {
+            fields(includeDeprecated: true) {
+                name
+                deprecationReason
+            }
+        }
+    }"""
+
+    result = schema.execute_sync(query)
+
+    assert not result.errors
+    assert result.data["__type"]["fields"] == [
+        {"name": "a", "deprecationReason": "Deprecated A"},
     ]
 
 
@@ -216,7 +297,7 @@ def test_parent_class_fields_are_inherited():
         cheese: str = "swiss"
 
         @strawberry.field
-        def friend(self, info) -> str:
+        def friend(self) -> str:
             return "food"
 
     @strawberry.type
@@ -224,13 +305,13 @@ def test_parent_class_fields_are_inherited():
         cake: str = "made_in_switzerland"
 
         @strawberry.field
-        def hello_this_is(self, info) -> str:
+        def hello_this_is(self) -> str:
             return "patrick"
 
     @strawberry.type
     class Query:
         @strawberry.field
-        def example(self, info) -> Schema:
+        def example(self) -> Schema:
             return Schema()
 
     schema = strawberry.Schema(query=Query)
@@ -262,7 +343,7 @@ def test_can_return_compatible_type():
     @strawberry.type
     class Query:
         @strawberry.field
-        def assortment(self, info) -> Cheese:
+        def assortment(self) -> Cheese:
             return Example(name="Asiago")  # type: ignore
 
     schema = strawberry.Schema(query=Query)
@@ -288,7 +369,7 @@ def test_init_var():
     @strawberry.type
     class Query:
         @strawberry.field
-        def category(self, info) -> Category:
+        def category(self) -> Category:
             return Category(name="example", id="123")
 
     schema = strawberry.Schema(query=Query)
@@ -309,7 +390,7 @@ def test_nested_types():
     @strawberry.type
     class Query:
         @strawberry.field
-        def user(self, info) -> User:
+        def user(self) -> User:
             return User(name="Patrick")
 
     schema = strawberry.Schema(query=Query)
@@ -341,3 +422,24 @@ def test_multiple_fields_with_same_type():
     assert not result.errors
     assert result.data["me"] is None
     assert result.data["you"] is None
+
+
+def test_str_magic_method_prints_schema_sdl():
+    @strawberry.type
+    class Query:
+        exampleBool: bool
+        exampleStr: str = "Example"
+        exampleInt: int = 1
+
+    schema = strawberry.Schema(query=Query)
+    expected = """
+    type Query {
+      exampleBool: Boolean!
+      exampleStr: String!
+      exampleInt: Int!
+    }
+    """
+    assert str(schema) == textwrap.dedent(expected).strip()
+    assert "<strawberry.schema.schema.Schema object" in repr(
+        schema
+    ), "Repr should not be affected"

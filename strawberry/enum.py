@@ -1,6 +1,6 @@
 import dataclasses
 from enum import EnumMeta
-from typing import Any, List, Optional
+from typing import Any, Callable, List, Optional, Union
 
 from .exceptions import NotAnEnum
 
@@ -18,7 +18,9 @@ class EnumDefinition:
     description: Optional[str]
 
 
-def _process_enum(cls, name=None, description=None):
+def _process_enum(
+    cls: EnumMeta, name: Optional[str] = None, description: Optional[str] = None
+) -> EnumMeta:
     if not isinstance(cls, EnumMeta):
         raise NotAnEnum()
 
@@ -27,23 +29,27 @@ def _process_enum(cls, name=None, description=None):
 
     description = description
 
-    cls._enum_definition = EnumDefinition(
+    values = [EnumValue(item.name, item.value) for item in cls]  # type: ignore
+
+    cls._enum_definition = EnumDefinition(  # type: ignore
         name=name,
-        values=[EnumValue(item.name, item.value) for item in cls],
+        values=values,
         description=description,
     )
 
     return cls
 
 
-def enum(_cls=None, *, name=None, description=None):
+def enum(
+    _cls: EnumMeta = None, *, name=None, description=None
+) -> Union[EnumMeta, Callable[[EnumMeta], EnumMeta]]:
     """Registers the enum in the GraphQL type system.
 
     If name is passed, the name of the GraphQL type will be
     the value passed of name instead of the Enum class name.
     """
 
-    def wrap(cls):
+    def wrap(cls: EnumMeta) -> EnumMeta:
         return _process_enum(cls, name, description)
 
     if not _cls:

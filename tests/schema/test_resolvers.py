@@ -1,4 +1,6 @@
+# type: ignore
 import typing
+from typing import List
 
 import pytest
 
@@ -9,7 +11,7 @@ def test_resolver():
     @strawberry.type
     class Query:
         @strawberry.field
-        def hello(self, info) -> str:
+        def hello(self) -> str:
             return "I'm a resolver"
 
     schema = strawberry.Schema(query=Query)
@@ -24,16 +26,16 @@ def test_resolver():
 
 @pytest.mark.asyncio
 async def test_resolver_function():
-    def function_resolver(root, info) -> str:
+    def function_resolver(root) -> str:
         return "I'm a function resolver"
 
-    async def async_resolver(root, info) -> str:
+    async def async_resolver(root) -> str:
         return "I'm an async resolver"
 
-    def resolve_name(root, info) -> str:
+    def resolve_name(root) -> str:
         return root.name
 
-    def resolve_say_hello(root, info, name: str) -> str:
+    def resolve_say_hello(root, name: str) -> str:
         return f"Hello {name}"
 
     @strawberry.type
@@ -64,10 +66,10 @@ async def test_resolver_function():
 
 
 def test_resolvers_on_types():
-    def function_resolver(root, info) -> str:
+    def function_resolver(root) -> str:
         return "I'm a function resolver"
 
-    def function_resolver_with_params(root, info, x: str) -> str:
+    def function_resolver_with_params(root, x: str) -> str:
         return f"I'm {x}"
 
     @strawberry.type
@@ -80,7 +82,7 @@ def test_resolvers_on_types():
     @strawberry.type
     class Query:
         @strawberry.field
-        def example(self, info) -> Example:
+        def example(self) -> Example:
             return Example()
 
     schema = strawberry.Schema(query=Query)
@@ -201,17 +203,16 @@ def test_only_info_function_resolvers():
 
 
 def test_classmethods_resolvers():
+    global User
+
     @strawberry.type
     class User:
         name: str
         age: int
 
         @classmethod
-        def get_users(cls):
+        def get_users(cls) -> "List[User]":
             return [cls(name="Bob", age=10), cls(name="Nancy", age=30)]
-
-    def get_users() -> typing.List[User]:
-        return User.get_users()
 
     @strawberry.type
     class Query:
@@ -225,3 +226,89 @@ def test_classmethods_resolvers():
 
     assert not result.errors
     assert result.data == {"users": [{"name": "Bob"}, {"name": "Nancy"}]}
+
+    del User
+
+
+def test_lambda_resolvers():
+    @strawberry.type
+    class Query:
+        letter: str = strawberry.field(resolver=lambda: "λ")
+
+    schema = strawberry.Schema(query=Query)
+
+    query = "{ letter }"
+
+    result = schema.execute_sync(query)
+
+    assert not result.errors
+    assert result.data == {"letter": "λ"}
+
+
+def test_bounded_instance_method_resolvers():
+    class CoolClass:
+        def method(self):
+            _ = self
+            return "something"
+
+    instance = CoolClass()
+
+    @strawberry.type
+    class Query:
+        blah: str = strawberry.field(resolver=instance.method)
+
+    schema = strawberry.Schema(query=Query)
+
+    query = "{ blah }"
+
+    result = schema.execute_sync(query)
+
+    assert not result.errors
+    assert result.data == {"blah": "something"}
+
+
+def test_extending_type():
+    def name_resolver(id: strawberry.ID) -> str:
+        return "Name"
+
+    def name_2_resolver(id: strawberry.ID) -> str:
+        return "Name 2"
+
+    @strawberry.type
+    class NameQuery:
+        name: str = strawberry.field(permission_classes=[], resolver=name_resolver)
+
+    @strawberry.type
+    class ExampleQuery:
+        name_2: str = strawberry.field(permission_classes=[], resolver=name_2_resolver)
+
+    @strawberry.type
+    class RootQuery(NameQuery, ExampleQuery):
+        pass
+
+    schema = strawberry.Schema(query=RootQuery)
+
+    query = '{ name(id: "abc"), name2(id: "abc") }'
+
+    result = schema.execute_sync(query)
+
+    assert not result.errors
+    assert result.data == {"name": "Name", "name2": "Name 2"}
+
+
+@pytest.mark.asyncio
+async def test_async_list_resolver():
+    @strawberry.type
+    class Query:
+        @strawberry.field
+        async def best_flavours(self) -> List[str]:
+            return ["strawberry", "pistachio"]
+
+    schema = strawberry.Schema(query=Query)
+
+    query = "{ bestFlavours }"
+
+    result = await schema.execute(query, root_value=Query())
+
+    assert not result.errors
+    assert result.data["bestFlavours"] == ["strawberry", "pistachio"]

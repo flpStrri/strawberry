@@ -5,6 +5,7 @@ import pytest
 import strawberry
 from strawberry.exceptions import MissingTypesForGenericError
 from strawberry.types.generics import copy_type_with
+from strawberry.union import StrawberryUnion
 
 
 T = TypeVar("T")
@@ -79,6 +80,30 @@ def test_generics_nested():
 
     assert definition.fields[0].name == "edge"
     assert definition.fields[0].type._type_definition.name == "StrEdge"
+    assert definition.fields[0].is_optional is False
+
+
+def test_generics_name():
+    @strawberry.type(name="AnotherName")
+    class EdgeName:
+        node: str
+
+    @strawberry.type
+    class Connection(Generic[T]):
+        edge: T
+
+    Copy = copy_type_with(Connection, EdgeName)
+
+    definition = Copy._type_definition
+
+    assert definition.name == "AnotherNameConnection"
+    assert definition.is_generic is False
+    assert definition.type_params == {}
+
+    assert len(definition.fields) == 1
+
+    assert definition.fields[0].name == "edge"
+    assert definition.fields[0].type._type_definition.name == "AnotherName"
     assert definition.fields[0].is_optional is False
 
 
@@ -251,26 +276,34 @@ def test_generics_with_unions():
     assert len(definition.fields) == 1
 
     assert definition.fields[0].name == "node"
-    assert definition.fields[0].type._union_definition
-    assert definition.fields[0].type._union_definition.types == (Error, T)
+    assert isinstance(definition.fields[0].type, StrawberryUnion)
+    assert definition.fields[0].type.types == (Error, T)
 
     assert definition.type_params == {"node": T}
 
     # let's make a copy of this generic type
 
-    Copy = copy_type_with(Edge, str)
+    @strawberry.type
+    class Node:
+        name: str
+
+    Copy = copy_type_with(Edge, Node)
 
     definition = Copy._type_definition
 
-    assert definition.name == "StrEdge"
+    assert definition.name == "NodeEdge"
     assert definition.is_generic is False
     assert definition.type_params == {}
 
     assert len(definition.fields) == 1
 
     assert definition.fields[0].name == "node"
-    assert definition.fields[0].type._union_definition.types == (Error, str)
-    assert definition.fields[0].type._union_definition.name == "ErrorStr"
+
+    union_definition = definition.fields[0].type
+    assert isinstance(union_definition, StrawberryUnion)
+    assert union_definition.name == "ErrorNode"
+    assert union_definition.types == (Error, Node)
+
     assert definition.fields[0].is_optional is False
 
 
@@ -460,8 +493,9 @@ def test_generics_inside_unions():
     assert definition.fields[0].name == "user"
     assert definition.fields[0].is_optional is False
 
-    union_definition = definition.fields[0].type._union_definition
+    union_definition = definition.fields[0].type
 
+    assert isinstance(union_definition, StrawberryUnion)
     assert union_definition.name == "StrEdgeError"
     assert union_definition.types[0]._type_definition.name == "StrEdge"
     assert union_definition.types[0]._type_definition.is_generic is False
@@ -485,8 +519,9 @@ def test_multiple_generics_inside_unions():
     assert definition.fields[0].name == "user"
     assert definition.fields[0].is_optional is False
 
-    union_definition = definition.fields[0].type._union_definition
+    union_definition = definition.fields[0].type
 
+    assert isinstance(union_definition, StrawberryUnion)
     assert union_definition.name == "IntEdgeStrEdge"
     assert union_definition.types[0]._type_definition.name == "IntEdge"
     assert union_definition.types[0]._type_definition.is_generic is False
@@ -495,3 +530,174 @@ def test_multiple_generics_inside_unions():
     assert union_definition.types[1]._type_definition.name == "StrEdge"
     assert union_definition.types[1]._type_definition.is_generic is False
     assert union_definition.types[1]._type_definition.fields[0].type == str
+
+
+def test_union_inside_generics():
+    @strawberry.type
+    class Dog:
+        name: str
+
+    @strawberry.type
+    class Cat:
+        name: str
+
+    @strawberry.type
+    class Connection(Generic[T]):
+        nodes: List[T]
+
+    DogCat = strawberry.union("DogCat", (Dog, Cat))
+
+    @strawberry.type
+    class Query:
+        connection: Connection[DogCat]
+
+    definition = Query._type_definition
+
+    assert definition.name == "Query"
+    assert len(definition.fields) == 1
+
+    assert definition.type_params == {}
+    assert definition.fields[0].name == "connection"
+    assert definition.fields[0].is_optional is False
+
+    type_definition = definition.fields[0].type._type_definition
+
+    assert type_definition.name == "DogCatConnection"
+    assert len(type_definition.fields) == 1
+    assert type_definition.fields[0].is_list is True
+
+    union_definition = type_definition.fields[0].child.type
+
+    assert isinstance(union_definition, StrawberryUnion)
+    assert union_definition.types[0]._type_definition.name == "Dog"
+    assert union_definition.types[1]._type_definition.name == "Cat"
+
+
+def test_anonymous_union_inside_generics():
+    @strawberry.type
+    class Dog:
+        name: str
+
+    @strawberry.type
+    class Cat:
+        name: str
+
+    @strawberry.type
+    class Connection(Generic[T]):
+        nodes: List[T]
+
+    @strawberry.type
+    class Query:
+        connection: Connection[Union[Dog, Cat]]
+
+    definition = Query._type_definition
+
+    assert definition.name == "Query"
+    assert len(definition.fields) == 1
+
+    assert definition.type_params == {}
+    assert definition.fields[0].name == "connection"
+    assert definition.fields[0].is_optional is False
+
+    type_definition = definition.fields[0].type._type_definition
+
+    assert type_definition.name == "DogCatConnection"
+    assert len(type_definition.fields) == 1
+    assert type_definition.fields[0].is_list is True
+
+    union_definition = type_definition.fields[0].child.type
+
+    assert isinstance(union_definition, StrawberryUnion)
+    assert union_definition.types[0]._type_definition.name == "Dog"
+    assert union_definition.types[1]._type_definition.name == "Cat"
+
+
+def test_using_generics_with_interfaces():
+    @strawberry.type
+    class Edge(Generic[T]):
+        node: T
+
+    @strawberry.interface
+    class WithName:
+        name: str
+
+    @strawberry.type
+    class Query:
+        user: Edge[WithName]
+
+    definition = Query._type_definition
+
+    assert definition.name == "Query"
+    assert len(definition.fields) == 1
+
+    assert definition.fields[0].name == "user"
+    assert definition.fields[0].type._type_definition.name == "WithNameEdge"
+    assert definition.fields[0].type._type_definition.is_generic is False
+    assert definition.fields[0].type._type_definition.fields[0].name == "node"
+    assert definition.fields[0].type._type_definition.fields[0].type == WithName
+
+
+def test_generic_with_arguments():
+    T = TypeVar("T")
+
+    @strawberry.type
+    class Collection(Generic[T]):
+        @strawberry.field
+        def by_id(self, ids: List[int]) -> List[T]:
+            return []
+
+    @strawberry.type
+    class Post:
+        name: str
+
+    @strawberry.type
+    class Query:
+        user: Collection[Post]
+
+    definition = Query._type_definition
+
+    assert definition.name == "Query"
+    assert len(definition.fields) == 1
+
+    assert definition.fields[0].name == "user"
+
+    type_definition = definition.fields[0].type._type_definition
+
+    assert type_definition.name == "PostCollection"
+    assert type_definition.is_generic is False
+    assert type_definition.fields[0].name == "byId"
+    assert type_definition.fields[0].is_list
+    assert type_definition.fields[0].child.type == Post
+    assert type_definition.fields[0].arguments[0].name == "ids"
+    assert type_definition.fields[0].arguments[0].is_list
+    assert type_definition.fields[0].arguments[0].child.type == int
+
+
+def test_federation():
+    @strawberry.federation.type(keys=["id"])
+    class Edge(Generic[T]):
+        id: strawberry.ID
+        node_field: T
+
+    definition = Edge._type_definition
+
+    Copy = copy_type_with(Edge, str)
+
+    definition = Copy._type_definition
+
+    assert definition.name == "StrEdge"
+    assert definition.is_generic is False
+    assert definition.type_params == {}
+
+    assert len(definition.fields) == 2
+
+    assert definition.fields[0].name == "id"
+    assert definition.fields[0].type == strawberry.ID
+    assert definition.fields[0].is_optional is False
+
+    assert definition.fields[1].name == "nodeField"
+    assert definition.fields[1].type == str
+    assert definition.fields[1].is_optional is False
+
+    assert definition.federation.keys == ["id"]
+    assert definition.federation.extend is False

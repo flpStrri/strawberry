@@ -16,7 +16,7 @@ def test_supports_default_directives():
     @strawberry.type
     class Query:
         @strawberry.field
-        def person(self, info) -> Person:
+        def person(self) -> Person:
             return Person()
 
     query = """query ($includePoints: Boolean!){
@@ -26,7 +26,7 @@ def test_supports_default_directives():
         }
     }"""
 
-    schema = strawberry.Schema(query=Query,)
+    schema = strawberry.Schema(query=Query)
     result = schema.execute_sync(query, variable_values={"includePoints": False})
 
     assert not result.errors
@@ -39,7 +39,7 @@ def test_supports_default_directives():
         }
     }"""
 
-    schema = strawberry.Schema(query=Query,)
+    schema = strawberry.Schema(query=Query)
     result = schema.execute_sync(query, variable_values={"skipPoints": False})
 
     assert not result.errors
@@ -79,7 +79,7 @@ def test_runs_directives():
     @strawberry.type
     class Query:
         @strawberry.field
-        def person(self, info) -> Person:
+        def person(self) -> Person:
             return Person()
 
     @strawberry.directive(
@@ -123,7 +123,7 @@ def test_runs_directives_with_list_params():
     @strawberry.type
     class Query:
         @strawberry.field
-        def person(self, info) -> Person:
+        def person(self) -> Person:
             return Person()
 
     @strawberry.directive(locations=[DirectiveLocation.FIELD])
